@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>Vertex Terminal | BTC-USDT</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Roboto+Mono&display=swap" rel="stylesheet">
+    <style>
+        body { background-color: #111417; color: #e1e2e7; font-family: 'Inter', sans-serif; }
+        .card { background-color: #1d2023; border-radius: 12px; padding: 24px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+        .btn-long { background: linear-gradient(to right, #45e89b, #0ecb81); color: #003920; font-weight: 700; transition: all 0.2s; }
+        .btn-long:hover { opacity: 0.9; transform: translateY(-1px); }
+        .btn-short { background-color: #ac012f; color: white; font-weight: 700; transition: all 0.2s; }
+        .btn-short:hover { opacity: 0.9; transform: translateY(-1px); }
+        .font-mono { font-family: 'Roboto Mono', monospace; }
+        [v-cloak] { display: none; }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+    <div id="app" v-cloak class="max-w-7xl mx-auto space-y-6">
+        <!-- Top Bar -->
+        <header class="flex flex-col md:flex-row justify-between items-start md:items-center card border-l-4 border-[#0ecb81]">
+            <div>
+                <div class="flex items-center space-x-2">
+                    <h1 class="text-2xl font-bold tracking-tight">BTC-USDT</h1>
+                    <span class="px-2 py-0.5 rounded bg-gray-800 text-[10px] font-bold text-gray-400">PERPETUAL</span>
+                </div>
+                <p class="text-xs text-gray-500 mt-1 uppercase tracking-widest">Vertex Terminal v1.0</p>
+            </div>
+            <div class="mt-4 md:mt-0 text-right">
+                <div class="text-4xl font-mono font-bold tracking-tighter text-white">${{ price.toLocaleString(undefined, {minimumFractionDigits: 2}) }}</div>
+                <div :class="change >= 0 ? 'text-[#45e89b]' : 'text-[#ffb3b5]'" class="font-bold flex items-center justify-end">
+                    <span v-if="change >= 0">▲</span><span v-else>▼</span>
+                    {{ Math.abs(change).toFixed(2) }}%
+                </div>
+            </div>
+        </header>
+
+        <!-- Metrics Row -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div class="card bg-[#111417] border border-gray-800">
+                <p class="text-gray-500 text-xs font-bold uppercase tracking-wider mb-2">Portfolio Balance</p>
+                <p class="text-2xl font-mono font-bold text-white">${{ balance.toLocaleString() }}</p>
+            </div>
+            <div class="card bg-[#111417] border border-gray-800">
+                <p class="text-gray-500 text-xs font-bold uppercase tracking-wider mb-2">Bot Status</p>
+                <div class="flex items-center space-x-2">
+                    <div :class="isRunning ? 'bg-[#45e89b] shadow-[0_0_10px_#45e89b]' : 'bg-red-500'" class="w-2 h-2 rounded-full"></div>
+                    <span class="font-bold text-sm" :class="isRunning ? 'text-[#45e89b]' : 'text-red-500'">{{ isRunning ? 'OPERATIONAL' : 'OFFLINE' }}</span>
+                </div>
+            </div>
+            <div class="card md:col-span-2 flex items-center space-x-3 bg-transparent p-0 shadow-none">
+                <button @click="toggleBot" class="flex-1 h-full rounded-xl bg-[#1d2023] hover:bg-[#272a2e] font-bold text-sm border border-gray-800 transition-colors">
+                    {{ isRunning ? 'STOP ENGINE' : 'START ENGINE' }}
+                </button>
+                <button @click="closeAll" class="flex-1 h-full rounded-xl bg-[#ac012f]/10 text-[#ffb3b5] border border-[#ac012f]/30 hover:bg-[#ac012f]/20 font-bold text-sm transition-colors">
+                    LIQUIDATE ALL
+                </button>
+            </div>
+        </div>
+
+        <!-- Main Workspace -->
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            <!-- Chart Container -->
+            <div class="lg:col-span-3 card p-2 bg-[#0b0e11] overflow-hidden min-h-[500px]">
+                <div id="chart"></div>
+            </div>
+
+            <!-- Trading Sidebar -->
+            <div class="space-y-4">
+                <div class="card space-y-4 border border-gray-800">
+                    <h2 class="text-xs font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800 pb-3">Quick Trade</h2>
+                    <div class="space-y-3">
+                        <button @click="trade('buy')" class="w-full py-4 rounded-xl btn-long shadow-lg shadow-[#0ecb81]/20">MARKET LONG</button>
+                        <button @click="trade('sell')" class="w-full py-4 rounded-xl btn-short shadow-lg shadow-[#ac012f]/20">MARKET SHORT</button>
+                    </div>
+                </div>
+
+                <div class="card space-y-3 border border-gray-800">
+                    <h2 class="text-xs font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800 pb-3">Active Positions</h2>
+                    <div v-if="positions.length === 0" class="py-10 text-center text-xs text-gray-600 italic">No open interest</div>
+                    <div v-for="pos in positions" class="p-3 bg-[#111417] rounded-lg border border-gray-800 space-y-2">
+                        <div class="flex justify-between items-center">
+                            <span :class="pos.side === 'long' ? 'text-[#45e89b]' : 'text-[#ffb3b5]'" class="font-bold text-sm">{{ pos.side.toUpperCase() }}</span>
+                            <span class="text-[10px] bg-gray-800 px-1.5 py-0.5 rounded text-gray-400">{{ pos.leverage }}X</span>
+                        </div>
+                        <div class="flex justify-between text-[11px] font-mono">
+                            <span class="text-gray-500">Entry: ${{ pos.entryPrice }}</span>
+                            <span :class="parseFloat(pos.unrealizedPnl) >= 0 ? 'text-[#45e89b]' : 'text-[#ffb3b5]'" class="font-bold">
+                                {{ parseFloat(pos.unrealizedPnl) >= 0 ? '+' : '' }}{{ pos.unrealizedPnl }} USDT
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- History Table -->
+        <div class="card border border-gray-800">
+            <h2 class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-6">Recent Logbook</h2>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs">
+                    <thead class="text-gray-600 border-b border-gray-800">
+                        <tr>
+                            <th class="pb-4 font-medium">Timestamp</th>
+                            <th class="pb-4 font-medium">Operation</th>
+                            <th class="pb-4 font-medium">Execution Price</th>
+                            <th class="pb-4 font-medium text-right">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-800/50">
+                        <tr v-for="log in history" class="hover:bg-white/[0.02]">
+                            <td class="py-4 font-mono text-gray-400">{{ log.time }}</td>
+                            <td class="py-4">
+                                <span :class="log.type.includes('LONG') ? 'text-[#45e89b] bg-[#45e89b]/10' : 'text-[#ffb3b5] bg-[#ffb3b5]/10'" class="px-2 py-1 rounded font-bold text-[10px]">
+                                    {{ log.type }}
+                                </span>
+                            </td>
+                            <td class="py-4 font-mono font-bold">${{ log.price.toLocaleString() }}</td>
+                            <td class="py-4 text-right">
+                                <span class="text-gray-500 italic">{{ log.status }}</span>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp } = Vue
+        createApp({
+            data() {
+                return {
+                    price: 0,
+                    change: 0,
+                    balance: 0,
+                    isRunning: false,
+                    positions: [],
+                    history: [],
+                    chart: null
+                }
+            },
+            async mounted() {
+                this.initChart();
+                this.update();
+                setInterval(this.update, 3000);
+            },
+            methods: {
+                initChart() {
+                    const options = {
+                        series: [{ data: [] }],
+                        chart: { type: 'candlestick', height: 480, background: 'transparent', toolbar: { show: false }, animations: { enabled: false } },
+                        theme: { mode: 'dark' },
+                        xaxis: { type: 'datetime', labels: { style: { colors: '#6b7280' } } },
+                        yaxis: { tooltip: { enabled: true }, labels: { style: { colors: '#6b7280' } } },
+                        grid: { borderColor: '#1f2937' },
+                        plotOptions: { candlestick: { colors: { upward: '#0ecb81', downward: '#f6465d' } } }
+                    };
+                    this.chart = new ApexCharts(document.querySelector("#chart"), options);
+                    this.chart.render();
+                },
+                async update() {
+                    try {
+                        const [statusRes, chartRes] = await Promise.all([
+                            fetch('http://localhost:8000/status'),
+                            fetch('http://localhost:8000/chart')
+                        ]);
+
+                        const status = await statusRes.json();
+                        this.price = status.price;
+                        this.change = status.change24h;
+                        this.balance = status.balance;
+                        this.isRunning = status.is_running;
+                        this.positions = status.positions;
+                        this.history = [...status.history].reverse();
+
+                        const chartData = await chartRes.json();
+                        const formatted = chartData.map(d => ({
+                            x: new Date(d.timestamp).getTime(),
+                            y: [d.open, d.high, d.low, d.close]
+                        }));
+                        this.chart.updateSeries([{ data: formatted }]);
+                    } catch(e) {}
+                },
+                async toggleBot() {
+                    const endpoint = this.isRunning ? 'stop' : 'start';
+                    await fetch('http://localhost:8000/' + endpoint, { method: 'POST' });
+                    this.update();
+                },
+                async trade(side) {
+                    await fetch('http://localhost:8000/trade', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ side })
+                    });
+                    this.update();
+                },
+                async closeAll() {
+                    await fetch('http://localhost:8000/close', { method: 'POST' });
+                    this.update();
+                }
+            }
+        }).mount('#app')
+    </script>
+</body>
+</html>
