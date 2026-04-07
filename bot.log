@@ -1,0 +1,8 @@
+2026-04-07 18:39:58,674 - trading_bot - INFO - Sandbox mode activated.
+2026-04-07 18:40:00,467 - trading_bot - ERROR - Error fetching balance: bingx {"code":100413,"msg":"Incorrect apiKey, please check your valid api key in https://bingx.com/en/account/api","timestamp":1775587200426}
+2026-04-07 18:40:00,467 - trading_bot - INFO - Exchange connection established.
+2026-04-07 18:40:52,702 - trading_bot - INFO - Sandbox mode activated.
+2026-04-07 18:40:53,476 - trading_bot - ERROR - Error fetching balance: bingx requires "apiKey" credential
+2026-04-07 18:40:53,476 - trading_bot - INFO - Exchange connection established.
+2026-04-07 18:40:54,860 - trading_bot - ERROR - Error updating positions: bingx requires "apiKey" credential
+2026-04-07 18:40:55,059 - trading_bot - ERROR - Error fetching balance: bingx requires "apiKey" credential
