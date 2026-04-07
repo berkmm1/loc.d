@@ -27,3 +27,13 @@
 2026-04-07 19:40:39,501 - trading_bot - ERROR - Error fetching balance: bingx requires "apiKey" credential
 2026-04-07 19:40:41,951 - trading_bot - ERROR - Error updating positions: bingx requires "apiKey" credential
 2026-04-07 19:40:42,151 - trading_bot - ERROR - Error fetching balance: bingx requires "apiKey" credential
+2026-04-07 20:12:52,362 - trading_bot - ERROR - Error fetching balance: bingx requires "apiKey" credential
+2026-04-07 20:12:52,363 - trading_bot - INFO - Exchange connection established.
+2026-04-07 20:12:55,448 - trading_bot - ERROR - Error updating positions: bingx requires "apiKey" credential
+2026-04-07 20:12:55,648 - trading_bot - ERROR - Error fetching balance: bingx requires "apiKey" credential
+2026-04-07 20:12:59,018 - trading_bot - ERROR - Error updating positions: bingx requires "apiKey" credential
+2026-04-07 20:12:59,219 - trading_bot - ERROR - Error fetching balance: bingx requires "apiKey" credential
+2026-04-07 20:13:01,225 - trading_bot - ERROR - Error updating positions: bingx requires "apiKey" credential
+2026-04-07 20:13:01,425 - trading_bot - ERROR - Error fetching balance: bingx requires "apiKey" credential
+2026-04-07 20:13:04,663 - trading_bot - ERROR - Error updating positions: bingx requires "apiKey" credential
+2026-04-07 20:13:04,863 - trading_bot - ERROR - Error fetching balance: bingx requires "apiKey" credential

@@ -6,3 +6,4 @@ pandas_ta
 python-dotenv
 fastapi
 uvicorn
+psycopg2-binary

@@ -3,131 +3,183 @@
 <head>
     <meta charset="utf-8"/>
     <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-    <title>Vertex Terminal | BTC-USDT</title>
+    <title>Vertex Terminal | Institutional BTC Trading</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Roboto+Mono&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
     <style>
-        body { background-color: #111417; color: #e1e2e7; font-family: 'Inter', sans-serif; }
-        .card { background-color: #1d2023; border-radius: 12px; padding: 24px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
-        .btn-long { background: linear-gradient(to right, #45e89b, #0ecb81); color: #003920; font-weight: 700; transition: all 0.2s; }
-        .btn-long:hover { opacity: 0.9; transform: translateY(-1px); }
-        .btn-short { background-color: #ac012f; color: white; font-weight: 700; transition: all 0.2s; }
-        .btn-short:hover { opacity: 0.9; transform: translateY(-1px); }
+        body { background-color: #111417; color: #e1e2e7; font-family: 'Inter', sans-serif; -webkit-font-smoothing: antialiased; }
+        .card { background-color: #1d2023; border-radius: 4px; padding: 24px; }
+        .surface-low { background-color: #191c1f; }
+        .surface-lowest { background-color: #0b0e11; }
+        .btn-long { background: linear-gradient(135deg, #45e89b 0%, #0ecb81 100%); color: #003920; }
+        .btn-short { background-color: #ac012f; color: white; }
         .font-mono { font-family: 'Roboto Mono', monospace; }
+        .glow-green { box-shadow: 0 0 15px rgba(69, 232, 155, 0.15); }
+        .glow-red { box-shadow: 0 0 15px rgba(172, 1, 47, 0.15); }
         [v-cloak] { display: none; }
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: #111417; }
+        ::-webkit-scrollbar-thumb { background: #37393d; border-radius: 10px; }
     </style>
 </head>
-<body class="p-4 md:p-8">
-    <div id="app" v-cloak class="max-w-7xl mx-auto space-y-6">
-        <!-- Top Bar -->
-        <header class="flex flex-col md:flex-row justify-between items-start md:items-center card border-l-4 border-[#0ecb81]">
-            <div>
-                <div class="flex items-center space-x-2">
-                    <h1 class="text-2xl font-bold tracking-tight">BTC-USDT</h1>
-                    <span class="px-2 py-0.5 rounded bg-gray-800 text-[10px] font-bold text-gray-400">PERPETUAL</span>
-                </div>
-                <p class="text-xs text-gray-500 mt-1 uppercase tracking-widest">Vertex Terminal v1.0</p>
-            </div>
-            <div class="mt-4 md:mt-0 text-right">
-                <div class="text-4xl font-mono font-bold tracking-tighter text-white">${{ price.toLocaleString(undefined, {minimumFractionDigits: 2}) }}</div>
-                <div :class="change >= 0 ? 'text-[#45e89b]' : 'text-[#ffb3b5]'" class="font-bold flex items-center justify-end">
-                    <span v-if="change >= 0">▲</span><span v-else>▼</span>
-                    {{ Math.abs(change).toFixed(2) }}%
-                </div>
-            </div>
-        </header>
+<body class="p-4 lg:p-10">
+    <div id="app" v-cloak class="max-w-[1600px] mx-auto space-y-8">
 
-        <!-- Metrics Row -->
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div class="card bg-[#111417] border border-gray-800">
-                <p class="text-gray-500 text-xs font-bold uppercase tracking-wider mb-2">Portfolio Balance</p>
-                <p class="text-2xl font-mono font-bold text-white">${{ balance.toLocaleString() }}</p>
+        <!-- Performance Header -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div class="card border-l border-gray-800">
+                <p class="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] mb-1">Win Rate</p>
+                <p class="text-3xl font-extrabold tracking-tighter text-white">{{ stats.winRate }}%</p>
             </div>
-            <div class="card bg-[#111417] border border-gray-800">
-                <p class="text-gray-500 text-xs font-bold uppercase tracking-wider mb-2">Bot Status</p>
-                <div class="flex items-center space-x-2">
-                    <div :class="isRunning ? 'bg-[#45e89b] shadow-[0_0_10px_#45e89b]' : 'bg-red-500'" class="w-2 h-2 rounded-full"></div>
-                    <span class="font-bold text-sm" :class="isRunning ? 'text-[#45e89b]' : 'text-red-500'">{{ isRunning ? 'OPERATIONAL' : 'OFFLINE' }}</span>
-                </div>
+            <div class="card border-l border-gray-800">
+                <p class="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] mb-1">Avg Profit</p>
+                <p class="text-3xl font-extrabold tracking-tighter text-[#45e89b]">+{{ stats.avgProfit }}</p>
             </div>
-            <div class="card md:col-span-2 flex items-center space-x-3 bg-transparent p-0 shadow-none">
-                <button @click="toggleBot" class="flex-1 h-full rounded-xl bg-[#1d2023] hover:bg-[#272a2e] font-bold text-sm border border-gray-800 transition-colors">
-                    {{ isRunning ? 'STOP ENGINE' : 'START ENGINE' }}
-                </button>
-                <button @click="closeAll" class="flex-1 h-full rounded-xl bg-[#ac012f]/10 text-[#ffb3b5] border border-[#ac012f]/30 hover:bg-[#ac012f]/20 font-bold text-sm transition-colors">
-                    LIQUIDATE ALL
-                </button>
+            <div class="card border-l border-gray-800">
+                <p class="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] mb-1">Best Trade</p>
+                <p class="text-3xl font-extrabold tracking-tighter text-[#45e89b]">{{ stats.bestTrade }}</p>
+            </div>
+            <div class="card border-l border-gray-800">
+                <p class="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] mb-1">Worst Trade</p>
+                <p class="text-3xl font-extrabold tracking-tighter text-[#ffb3b5]">{{ stats.worstTrade }}</p>
             </div>
         </div>
 
-        <!-- Main Workspace -->
-        <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
-            <!-- Chart Container -->
-            <div class="lg:col-span-3 card p-2 bg-[#0b0e11] overflow-hidden min-h-[500px]">
-                <div id="chart"></div>
-            </div>
+        <!-- Main Terminal -->
+        <div class="grid grid-cols-1 xl:grid-cols-12 gap-8">
 
-            <!-- Trading Sidebar -->
-            <div class="space-y-4">
-                <div class="card space-y-4 border border-gray-800">
-                    <h2 class="text-xs font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800 pb-3">Quick Trade</h2>
-                    <div class="space-y-3">
-                        <button @click="trade('buy')" class="w-full py-4 rounded-xl btn-long shadow-lg shadow-[#0ecb81]/20">MARKET LONG</button>
-                        <button @click="trade('sell')" class="w-full py-4 rounded-xl btn-short shadow-lg shadow-[#ac012f]/20">MARKET SHORT</button>
+            <!-- Left: Trading Engine & Analytics -->
+            <div class="xl:col-span-9 space-y-8">
+
+                <!-- Main Header & Chart -->
+                <div class="card surface-lowest border border-gray-900 overflow-hidden p-0">
+                    <div class="p-6 border-b border-gray-900 flex justify-between items-center bg-[#1d2023]/30">
+                        <div>
+                            <h1 class="text-xl font-black tracking-tight flex items-center">
+                                BTC-USDT <span class="ml-2 text-[9px] bg-gray-800 px-1.5 py-0.5 rounded text-gray-400">PERP</span>
+                            </h1>
+                            <p class="text-[10px] text-gray-600 font-mono mt-1 uppercase tracking-widest">Live Execution Terminal</p>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-4xl font-mono font-bold tracking-tighter text-white">${{ price.toLocaleString(undefined, {minimumFractionDigits: 2}) }}</div>
+                            <div :class="change >= 0 ? 'text-[#45e89b]' : 'text-[#ffb3b5]'" class="text-xs font-bold font-mono">
+                                {{ change >= 0 ? '+' : '' }}{{ change.toFixed(2) }}% 24h
+                            </div>
+                        </div>
+                    </div>
+                    <div class="p-2 h-[500px]">
+                        <div id="main-chart"></div>
                     </div>
                 </div>
 
-                <div class="card space-y-3 border border-gray-800">
-                    <h2 class="text-xs font-bold text-gray-500 uppercase tracking-widest border-b border-gray-800 pb-3">Active Positions</h2>
-                    <div v-if="positions.length === 0" class="py-10 text-center text-xs text-gray-600 italic">No open interest</div>
-                    <div v-for="pos in positions" class="p-3 bg-[#111417] rounded-lg border border-gray-800 space-y-2">
+                <!-- Cumulative PNL History -->
+                <div class="card border border-gray-800">
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-[11px] font-bold text-gray-500 uppercase tracking-[0.2em]">Cumulative PNL Performance</h2>
+                        <div class="flex space-x-2">
+                            <button v-for="r in ['1D','1W','1M','ALL']" class="text-[10px] font-bold px-3 py-1 rounded bg-gray-800/50 hover:bg-gray-800 border border-gray-800 text-gray-500 hover:text-white transition-all">{{ r }}</button>
+                        </div>
+                    </div>
+                    <div class="h-[200px]">
+                        <div id="pnl-chart"></div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Right: Execution & Positions -->
+            <div class="xl:col-span-3 space-y-8">
+
+                <!-- Control Center -->
+                <div class="card border border-gray-800 space-y-6">
+                    <div class="space-y-4">
+                        <button @click="trade('buy')" class="w-full py-5 rounded font-black text-xs uppercase tracking-widest btn-long glow-green transition-transform hover:scale-[1.01]">Execute Market Long</button>
+                        <button @click="trade('sell')" class="w-full py-5 rounded font-black text-xs uppercase tracking-widest btn-short glow-red transition-transform hover:scale-[1.01]">Execute Market Short</button>
+                    </div>
+                    <div class="pt-4 border-t border-gray-800 space-y-3">
+                        <div class="flex justify-between text-[10px] font-bold text-gray-500 uppercase">
+                            <span>Balance</span>
+                            <span class="text-white font-mono font-bold tracking-tighter">${{ balance.toLocaleString() }}</span>
+                        </div>
+                        <div class="flex justify-between text-[10px] font-bold text-gray-500 uppercase">
+                            <span>Engine</span>
+                            <span :class="isRunning ? 'text-[#45e89b]' : 'text-red-500'" class="font-mono">{{ isRunning ? 'ACTIVE' : 'IDLE' }}</span>
+                        </div>
+                        <div class="flex space-x-2 pt-2">
+                            <button @click="toggleBot" class="flex-1 py-3 rounded bg-gray-800 text-[10px] font-bold uppercase tracking-widest border border-gray-700 hover:bg-gray-700">{{ isRunning ? 'Shutdown' : 'Initialize' }}</button>
+                            <button @click="closeAll" class="flex-1 py-3 rounded bg-red-900/10 text-red-500 text-[10px] font-bold uppercase tracking-widest border border-red-900/30 hover:bg-red-900/20">Liquidate</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Open Positions -->
+                <div class="card border border-gray-800 space-y-4">
+                    <h2 class="text-[11px] font-bold text-gray-500 uppercase tracking-[0.2em] border-b border-gray-800 pb-3">Open Interests</h2>
+                    <div v-for="pos in positions" class="p-4 bg-surface-lowest rounded border border-gray-800 space-y-3 relative overflow-hidden">
+                        <div :class="pos.side === 'long' ? 'bg-[#45e89b]' : 'bg-[#ac012f]'" class="absolute top-0 left-0 w-1 h-full"></div>
                         <div class="flex justify-between items-center">
-                            <span :class="pos.side === 'long' ? 'text-[#45e89b]' : 'text-[#ffb3b5]'" class="font-bold text-sm">{{ pos.side.toUpperCase() }}</span>
-                            <span class="text-[10px] bg-gray-800 px-1.5 py-0.5 rounded text-gray-400">{{ pos.leverage }}X</span>
+                            <span :class="pos.side === 'long' ? 'text-[#45e89b]' : 'text-[#ffb3b5]'" class="text-xs font-black tracking-widest">{{ pos.side.toUpperCase() }}</span>
+                            <span class="text-[10px] font-mono text-gray-500">{{ pos.leverage }}X LEV</span>
                         </div>
-                        <div class="flex justify-between text-[11px] font-mono">
-                            <span class="text-gray-500">Entry: ${{ pos.entryPrice }}</span>
-                            <span :class="parseFloat(pos.unrealizedPnl) >= 0 ? 'text-[#45e89b]' : 'text-[#ffb3b5]'" class="font-bold">
-                                {{ parseFloat(pos.unrealizedPnl) >= 0 ? '+' : '' }}{{ pos.unrealizedPnl }} USDT
-                            </span>
+                        <div class="flex justify-between items-end">
+                            <div class="text-[10px] text-gray-600 font-mono">
+                                Entry: ${{ pos.entryPrice }}<br>
+                                Qty: {{ pos.contracts }}
+                            </div>
+                            <div :class="parseFloat(pos.unrealizedPnl) >= 0 ? 'text-[#45e89b]' : 'text-[#ffb3b5]'" class="text-lg font-bold font-mono tracking-tighter">
+                                {{ parseFloat(pos.unrealizedPnl) >= 0 ? '+' : '' }}{{ pos.unrealizedPnl }}
+                            </div>
                         </div>
                     </div>
+                    <div v-if="positions.length === 0" class="py-12 text-center text-[10px] text-gray-600 font-bold uppercase tracking-widest italic opacity-50">No Active Positions</div>
                 </div>
+
             </div>
         </div>
 
-        <!-- History Table -->
-        <div class="card border border-gray-800">
-            <h2 class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-6">Recent Logbook</h2>
+        <!-- Logbook -->
+        <div class="card border border-gray-800 p-0 overflow-hidden">
+            <div class="p-6 border-b border-gray-800">
+                <h2 class="text-[11px] font-bold text-gray-500 uppercase tracking-[0.2em]">Transaction Logbook</h2>
+            </div>
             <div class="overflow-x-auto">
-                <table class="w-full text-left text-xs">
-                    <thead class="text-gray-600 border-b border-gray-800">
+                <table class="w-full text-left text-[11px]">
+                    <thead class="text-gray-500 bg-surface-lowest border-b border-gray-800">
                         <tr>
-                            <th class="pb-4 font-medium">Timestamp</th>
-                            <th class="pb-4 font-medium">Operation</th>
-                            <th class="pb-4 font-medium">Execution Price</th>
-                            <th class="pb-4 font-medium text-right">Status</th>
+                            <th class="px-6 py-4 font-bold uppercase tracking-widest">Timestamp</th>
+                            <th class="px-6 py-4 font-bold uppercase tracking-widest">Operation</th>
+                            <th class="px-6 py-4 font-bold uppercase tracking-widest text-center">Status</th>
+                            <th class="px-6 py-4 font-bold uppercase tracking-widest">Entry Price</th>
+                            <th class="px-6 py-4 font-bold uppercase tracking-widest text-right">PNL</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-800/50">
-                        <tr v-for="log in history" class="hover:bg-white/[0.02]">
-                            <td class="py-4 font-mono text-gray-400">{{ log.time }}</td>
-                            <td class="py-4">
-                                <span :class="log.type.includes('LONG') ? 'text-[#45e89b] bg-[#45e89b]/10' : 'text-[#ffb3b5] bg-[#ffb3b5]/10'" class="px-2 py-1 rounded font-bold text-[10px]">
+                        <tr v-for="log in history" class="hover:bg-white/[0.02] transition-colors">
+                            <td class="px-6 py-4 font-mono text-gray-400">{{ log.time }}</td>
+                            <td class="px-6 py-4">
+                                <span :class="log.type.includes('LONG') ? 'text-[#45e89b] border-[#45e89b]/30' : 'text-[#ffb3b5] border-[#ffb3b5]/30'" class="px-2 py-0.5 rounded border text-[9px] font-bold tracking-widest">
                                     {{ log.type }}
                                 </span>
                             </td>
-                            <td class="py-4 font-mono font-bold">${{ log.price.toLocaleString() }}</td>
-                            <td class="py-4 text-right">
-                                <span class="text-gray-500 italic">{{ log.status }}</span>
+                            <td class="px-6 py-4 text-center">
+                                <span :class="log.status === 'CLOSED' ? 'text-gray-500' : 'text-blue-400'" class="font-bold text-[9px] tracking-widest uppercase">
+                                    {{ log.status }}
+                                </span>
+                            </td>
+                            <td class="px-6 py-4 font-mono font-bold tracking-tight text-white">${{ log.price.toLocaleString() }}</td>
+                            <td class="px-6 py-4 text-right">
+                                <span :class="log.pnl >= 0 ? 'text-[#45e89b]' : 'text-[#ffb3b5]'" class="font-mono font-bold text-[13px] tracking-tighter">
+                                    {{ log.pnl >= 0 ? '+' : '' }}{{ log.pnl.toFixed(2) }} USDT
+                                </span>
                             </td>
                         </tr>
                     </tbody>
                 </table>
             </div>
         </div>
+
     </div>
 
     <script>
@@ -135,33 +187,43 @@
         createApp({
             data() {
                 return {
-                    price: 0,
-                    change: 0,
-                    balance: 0,
-                    isRunning: false,
-                    positions: [],
-                    history: [],
-                    chart: null
+                    price: 0, change: 0, balance: 0, isRunning: false, positions: [], history: [],
+                    stats: { winRate: 0, avgProfit: '0.00', bestTrade: '0.00', worstTrade: '0.00' },
+                    charts: { main: null, pnl: null }
                 }
             },
             async mounted() {
-                this.initChart();
+                this.initCharts();
                 this.update();
                 setInterval(this.update, 3000);
             },
             methods: {
-                initChart() {
-                    const options = {
-                        series: [{ data: [] }],
-                        chart: { type: 'candlestick', height: 480, background: 'transparent', toolbar: { show: false }, animations: { enabled: false } },
+                initCharts() {
+                    const baseOptions = {
+                        chart: { background: 'transparent', toolbar: { show: false }, animations: { enabled: false } },
                         theme: { mode: 'dark' },
-                        xaxis: { type: 'datetime', labels: { style: { colors: '#6b7280' } } },
-                        yaxis: { tooltip: { enabled: true }, labels: { style: { colors: '#6b7280' } } },
-                        grid: { borderColor: '#1f2937' },
-                        plotOptions: { candlestick: { colors: { upward: '#0ecb81', downward: '#f6465d' } } }
+                        grid: { borderColor: '#1f2937', strokeDashArray: 4 },
+                        xaxis: { type: 'datetime', labels: { style: { colors: '#4b5563', fontSize: '10px' } } },
+                        yaxis: { labels: { style: { colors: '#4b5563', fontSize: '10px' } } }
                     };
-                    this.chart = new ApexCharts(document.querySelector("#chart"), options);
-                    this.chart.render();
+
+                    this.charts.main = new ApexCharts(document.querySelector("#main-chart"), {
+                        ...baseOptions,
+                        series: [{ data: [] }],
+                        chart: { ...baseOptions.chart, type: 'candlestick', height: '100%' },
+                        plotOptions: { candlestick: { colors: { upward: '#0ecb81', downward: '#ac012f' } } }
+                    });
+                    this.charts.main.render();
+
+                    this.charts.pnl = new ApexCharts(document.querySelector("#pnl-chart"), {
+                        ...baseOptions,
+                        series: [{ name: 'Cumulative PNL', data: [] }],
+                        chart: { ...baseOptions.chart, type: 'area', height: '100%', sparkline: { enabled: false } },
+                        stroke: { curve: 'smooth', width: 2, colors: ['#45e89b'] },
+                        fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.4, opacityTo: 0.1, stops: [0, 90, 100] } },
+                        colors: ['#45e89b']
+                    });
+                    this.charts.pnl.render();
                 },
                 async update() {
                     try {
@@ -176,33 +238,39 @@
                         this.balance = status.balance;
                         this.isRunning = status.is_running;
                         this.positions = status.positions;
-                        this.history = [...status.history].reverse();
+                        this.history = status.history;
 
+                        // Calculate Analytics
+                        const closedTrades = this.history.filter(t => t.status === 'CLOSED');
+                        if (closedTrades.length > 0) {
+                            const pnls = closedTrades.map(t => t.pnl);
+                            const wins = closedTrades.filter(t => t.pnl > 0).length;
+                            this.stats.winRate = (wins / closedTrades.length * 100).toFixed(1);
+                            this.stats.avgProfit = (pnls.reduce((a,b) => a+b, 0) / pnls.length).toFixed(2);
+                            this.stats.bestTrade = Math.max(...pnls).toFixed(2);
+                            this.stats.worstTrade = Math.min(...pnls).toFixed(2);
+
+                            // Update PNL Chart
+                            let cumPnl = 0;
+                            const pnlSeries = closedTrades.reverse().map(t => {
+                                cumPnl += t.pnl;
+                                return { x: new Date(t.time).getTime(), y: cumPnl };
+                            });
+                            this.charts.pnl.updateSeries([{ data: pnlSeries }]);
+                        }
+
+                        // Update Main Chart
                         const chartData = await chartRes.json();
                         const formatted = chartData.map(d => ({
                             x: new Date(d.timestamp).getTime(),
                             y: [d.open, d.high, d.low, d.close]
                         }));
-                        this.chart.updateSeries([{ data: formatted }]);
+                        this.charts.main.updateSeries([{ data: formatted }]);
                     } catch(e) {}
                 },
-                async toggleBot() {
-                    const endpoint = this.isRunning ? 'stop' : 'start';
-                    await fetch('http://localhost:8000/' + endpoint, { method: 'POST' });
-                    this.update();
-                },
-                async trade(side) {
-                    await fetch('http://localhost:8000/trade', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ side })
-                    });
-                    this.update();
-                },
-                async closeAll() {
-                    await fetch('http://localhost:8000/close', { method: 'POST' });
-                    this.update();
-                }
+                async toggleBot() { await fetch('http://localhost:8000/' + (this.isRunning ? 'stop' : 'start'), { method: 'POST' }); this.update(); },
+                async trade(side) { await fetch('http://localhost:8000/trade', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ side }) }); this.update(); },
+                async closeAll() { await fetch('http://localhost:8000/close', { method: 'POST' }); this.update(); }
             }
         }).mount('#app')
     </script>
