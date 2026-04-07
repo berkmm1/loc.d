@@ -3,28 +3,31 @@ import pandas as pd
 import time
 import os
 import threading
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 from utils import calculate_indicators, setup_logger, get_timestamp
+from datetime import datetime
 
 load_dotenv()
 
 class BingXBot:
     """
-    Core Trading Bot class for BingX BTC-USDT Perpetual Futures.
-    Handles exchange connectivity, market data, position management, and strategy execution.
+    Enhanced BingX Trading Bot with Database Persistence and Robust Error Handling.
     """
-    def __init__(self, api_key=None, api_secret=None, sandbox=True):
+    def __init__(self, api_key=None, api_secret=None, sandbox=True, db_url=None):
         self.api_key = api_key or os.getenv('BINGX_API_KEY')
         self.api_secret = api_secret or os.getenv('BINGX_API_SECRET')
         self.sandbox = sandbox
+        self.db_url = db_url or os.getenv('DATABASE_URL')
 
-        # Strategy & Risk Parameters (can be updated from UI)
+        # Strategy Parameters
         self.leverage = 10
         self.risk_percent = 1.0
         self.rsi_period = 14
         self.ema_period = 50
         self.timeframe = '1h'
-        self.sl_percent = 30.0  # Stop Loss as % of position (including leverage)
+        self.sl_percent = 30.0 # Position-based
 
         self.symbol = 'BTC/USDT:USDT'
         self.is_running = False
@@ -35,38 +38,85 @@ class BingXBot:
         self.current_price = 0.0
         self.price_change_24h = 0.0
         self.balance = 0.0
-        self.positions = []      # Active positions from exchange
-        self.trade_history = []  # Local log of trades performed in this session
-        self.last_signal_time = None # To prevent multiple entries on same candle
+        self.positions = []
+        self.trade_history = []
+        self.last_signal_time = None
 
         # Initialize Exchange
         self.exchange = None
         self._init_exchange()
+        self._check_db_tables()
 
     def _init_exchange(self):
-        """Initializes the CCXT BingX exchange instance."""
         try:
             exchange_options = {
                 'apiKey': self.api_key,
                 'secret': self.api_secret,
                 'enableRateLimit': True,
-                'options': {
-                    'defaultType': 'swap',
-                }
+                'options': { 'defaultType': 'swap' }
             }
             self.exchange = ccxt.bingx(exchange_options)
-
             if self.sandbox:
                 self.exchange.set_sandbox_mode(True)
-                self.logger.info("Sandbox mode activated.")
-
             self.update_balance()
-            self.logger.info("Exchange connection established.")
+            self.logger.info(f"Exchange initialized. Sandbox: {self.sandbox}")
         except Exception as e:
             self.logger.error(f"Exchange initialization failed: {e}")
 
+    def _get_db_conn(self):
+        if not self.db_url: return None
+        try:
+            # Add connect_timeout to avoid hanging
+            return psycopg2.connect(self.db_url, connect_timeout=5)
+        except Exception as e:
+            self.logger.error(f"DB connection failed: {e}")
+            return None
+
+    def save_trade(self, trade_type, price, amount, pnl=0, status='OPEN'):
+        conn = self._get_db_conn()
+        if not conn: return
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO trades (symbol, type, price, amount, pnl, status) VALUES (%s, %s, %s, %s, %s, %s)",
+                    (self.symbol, trade_type, price, amount, pnl, status)
+                )
+                conn.commit()
+        except Exception as e:
+            self.logger.error(f"Error saving trade to DB: {e}")
+        finally:
+            conn.close()
+
+    def save_balance(self):
+        conn = self._get_db_conn()
+        if not conn: return
+        try:
+            with conn.cursor() as cur:
+                cur.execute("INSERT INTO balance_history (balance) VALUES (%s)", (self.balance,))
+                conn.commit()
+        except Exception as e:
+            self.logger.error(f"Error saving balance to DB: {e}")
+        finally:
+            conn.close()
+
+    def get_trade_history(self, limit=50):
+        conn = self._get_db_conn()
+        if not conn: return self.trade_history
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("SELECT time, type, price, amount, status, pnl FROM trades ORDER BY time DESC LIMIT %s", (limit,))
+                rows = cur.fetchall()
+                for row in rows:
+                    if isinstance(row['time'], datetime):
+                        row['time'] = row['time'].strftime("%Y-%m-%d %H:%M:%S")
+                return rows
+        except Exception as e:
+            self.logger.error(f"Error fetching history: {e}")
+            return self.trade_history
+        finally:
+            conn.close()
+
     def update_balance(self):
-        """Fetches the current USDT balance from the exchange."""
         try:
             if not self.exchange: return 0.0
             balance_info = self.exchange.fetch_balance()
@@ -77,78 +127,63 @@ class BingXBot:
             return 0.0
 
     def update_market_data(self):
-        """Fetches ticker and OHLCV data, then calculates indicators."""
         try:
             if not self.exchange: return False
-
-            # 1. Fetch Ticker for real-time price
             ticker = self.exchange.fetch_ticker(self.symbol)
             self.current_price = ticker['last']
             self.price_change_24h = ticker['percentage']
 
-            # 2. Fetch OHLCV for indicators
             ohlcv = self.exchange.fetch_ohlcv(self.symbol, timeframe=self.timeframe, limit=100)
             df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
 
-            # 3. Calculate Indicators
             self.df = calculate_indicators(df, self.rsi_period, self.ema_period)
-
             return True
         except Exception as e:
             self.logger.error(f"Error updating market data: {e}")
             return False
 
     def update_positions(self):
-        """Fetches active positions and performs automated SL/TP management."""
         try:
             if not self.exchange: return []
-
             raw_positions = self.exchange.fetch_positions([self.symbol])
             self.positions = [p for p in raw_positions if float(p.get('contracts', 0)) > 0]
 
-            # Manage each position automatically
+            # Management loop
             for pos in self.positions:
                 self._manage_position(pos)
-
             return self.positions
         except Exception as e:
             self.logger.error(f"Error updating positions: {e}")
             return []
 
     def _manage_position(self, pos):
-        """Handles SL/TP for a position."""
         side = pos['side'].lower()
         entry_price = float(pos['entryPrice'])
         curr_price = self.current_price
-
         if entry_price == 0: return
 
-        # PNL percentage calculation
+        # Leveraged PNL calculation
         if side == 'long':
             pnl_pct = (curr_price - entry_price) / entry_price * self.leverage * 100
         else:
             pnl_pct = (entry_price - curr_price) / entry_price * self.leverage * 100
 
-        # SL: -30%
+        # SL Check
         if pnl_pct <= -self.sl_percent:
-            self.logger.warning(f"STOP LOSS triggered for {side.upper()} at {pnl_pct:.2f}%")
-            self.close_position(side)
+            self.logger.warning(f"AUTO-SL: Closing {side} at {pnl_pct:.2f}%")
+            self.close_position(side, pnl_pct)
+            return
 
-        # TP: RSI signal or 1:2 RR
-        last_rsi = self.df.iloc[-1]['RSI'] if not self.df.empty else 50
-
-        # LONG exit: RSI > 70
-        # SHORT exit: RSI < 30
-        long_tp = side == 'long' and (last_rsi > 70 or pnl_pct >= self.sl_percent * 2)
-        short_tp = side == 'short' and (last_rsi < 30 or pnl_pct >= self.sl_percent * 2)
-
-        if long_tp or short_tp:
-            self.logger.info(f"TAKE PROFIT triggered for {side.upper()} at {pnl_pct:.2f}% (RSI: {last_rsi:.2f})")
-            self.close_position(side)
+        # TP Check
+        if not self.df.empty:
+            last_rsi = self.df.iloc[-1]['RSI']
+            # Exit signals: Long if RSI > 70, Short if RSI < 30
+            if (side == 'long' and (last_rsi > 70 or pnl_pct >= self.sl_percent * 2)) or                (side == 'short' and (last_rsi < 30 or pnl_pct >= self.sl_percent * 2)):
+                self.logger.info(f"AUTO-TP: Closing {side} at {pnl_pct:.2f}% (RSI: {last_rsi:.2f})")
+                self.close_position(side, pnl_pct)
 
     def open_position(self, side):
-        """Executes a market order to open a position."""
         try:
             if not self.exchange: return False
             self.exchange.set_leverage(self.leverage, self.symbol)
@@ -158,32 +193,27 @@ class BingXBot:
 
             order = self.exchange.create_market_order(self.symbol, side, amount)
             trade_type = 'LONG' if side == 'buy' else 'SHORT'
-            self.logger.info(f"Successfully opened {trade_type} position. Amount: {amount}")
+            self.logger.info(f"Opened {trade_type} position: {amount}")
 
-            self.trade_history.append({
-                'time': get_timestamp(),
-                'type': trade_type,
-                'price': self.current_price,
-                'amount': amount,
-                'status': 'OPEN'
-            })
+            self.save_trade(trade_type, self.current_price, amount, 0, 'OPEN')
             return True
         except Exception as e:
             self.logger.error(f"Failed to open position: {e}")
             return False
 
-    def close_position(self, side=None):
-        """Closes positions for the symbol."""
+    def close_position(self, side=None, pnl=0):
         try:
             if not self.exchange: return False
-            self.update_positions()
+            # Ensure we have fresh position data
+            raw_positions = self.exchange.fetch_positions([self.symbol])
+            active_positions = [p for p in raw_positions if float(p.get('contracts', 0)) > 0]
 
-            target_positions = self.positions
             if side:
-                # Handle 'buy'/'sell' to 'long'/'short' mapping
                 side_map = {'buy': 'long', 'sell': 'short', 'long': 'long', 'short': 'short'}
                 target_side = side_map.get(side.lower(), side.lower())
-                target_positions = [p for p in self.positions if p['side'].lower() == target_side]
+                target_positions = [p for p in active_positions if p['side'].lower() == target_side]
+            else:
+                target_positions = active_positions
 
             if not target_positions: return False
 
@@ -191,23 +221,17 @@ class BingXBot:
                 close_side = 'sell' if pos['side'] == 'long' else 'buy'
                 amount = float(pos['contracts'])
                 self.exchange.create_market_order(self.symbol, close_side, amount, params={'reduceOnly': True})
-                self.logger.info(f"Closed {pos['side'].upper()} position.")
+                self.logger.info(f"Closed {pos['side'].upper()} position of {amount}")
+                self.save_trade(f"CLOSE {pos['side'].upper()}", self.current_price, amount, pnl, 'CLOSED')
 
-                self.trade_history.append({
-                    'time': get_timestamp(),
-                    'type': f"CLOSE {pos['side'].upper()}",
-                    'price': self.current_price,
-                    'amount': amount,
-                    'status': 'CLOSED'
-                })
             self.update_balance()
+            self.save_balance()
             return True
         except Exception as e:
             self.logger.error(f"Error during position closure: {e}")
             return False
 
     def bot_cycle(self):
-        """Main loop iteration."""
         if not self.update_market_data(): return
         self.update_positions()
         self.update_balance()
@@ -215,18 +239,15 @@ class BingXBot:
         if self.is_running and not self.df.empty:
             last_timestamp = self.df.iloc[-1]['timestamp']
 
-            # Only trade if this candle hasn't been traded yet
+            # Use timestamp to avoid multiple entries on same candle
             if self.last_signal_time != last_timestamp:
                 signal = self._check_signals()
-                if signal == 'LONG':
-                    if self.open_position('buy'):
-                        self.last_signal_time = last_timestamp
-                elif signal == 'SHORT':
-                    if self.open_position('sell'):
+                if signal:
+                    self.logger.info(f"Signal detected: {signal} at {last_timestamp}")
+                    if self.open_position('buy' if signal == 'LONG' else 'sell'):
                         self.last_signal_time = last_timestamp
 
     def _check_signals(self):
-        """Strategy logic."""
         if self.df.empty: return None
         last_row = self.df.iloc[-1]
 
@@ -241,8 +262,46 @@ class BingXBot:
 
     def start(self):
         self.is_running = True
-        self.logger.info("Bot Engine Started.")
+        self.logger.info("Bot Engine Started")
 
     def stop(self):
         self.is_running = False
-        self.logger.info("Bot Engine Stopped.")
+        self.logger.info("Bot Engine Stopped")
+
+
+    def _check_db_tables(self):
+        conn = self._get_db_conn()
+        if not conn: return
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1 FROM trades LIMIT 1")
+                cur.execute("SELECT 1 FROM balance_history LIMIT 1")
+                self.logger.info("Database tables verified.")
+        except Exception as e:
+            self.logger.error(f"Database table verification failed: {e}")
+            # Try to create them if they don't exist
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        CREATE TABLE IF NOT EXISTS trades (
+                            id SERIAL PRIMARY KEY,
+                            time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            symbol VARCHAR(20),
+                            type VARCHAR(20),
+                            price DECIMAL(20, 2),
+                            amount DECIMAL(20, 8),
+                            pnl DECIMAL(20, 4) DEFAULT 0,
+                            status VARCHAR(20)
+                        );
+                        CREATE TABLE IF NOT EXISTS balance_history (
+                            id SERIAL PRIMARY KEY,
+                            time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            balance DECIMAL(20, 2)
+                        );
+                    """)
+                    conn.commit()
+                    self.logger.info("Database tables created.")
+            except Exception as e2:
+                self.logger.error(f"Failed to create tables: {e2}")
+        finally:
+            conn.close()
