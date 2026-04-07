@@ -171,7 +171,7 @@
                             <td class="px-6 py-4 font-mono font-bold tracking-tight text-white">${{ log.price.toLocaleString() }}</td>
                             <td class="px-6 py-4 text-right">
                                 <span :class="log.pnl >= 0 ? 'text-[#45e89b]' : 'text-[#ffb3b5]'" class="font-mono font-bold text-[13px] tracking-tighter">
-                                    {{ log.pnl >= 0 ? '+' : '' }}{{ log.pnl.toFixed(2) }} USDT
+                                    {{ log.pnl >= 0 ? '+' : '' }}{{ log.pnl ? log.pnl.toFixed(2) : '0.00' }} USDT
                                 </span>
                             </td>
                         </tr>
@@ -187,7 +187,7 @@
         createApp({
             data() {
                 return {
-                    price: 0, change: 0, balance: 0, isRunning: false, positions: [], history: [],
+                    price: 0, change: 0, balance: 0, isRunning: false, sandbox: true, positions: [], history: [],
                     stats: { winRate: 0, avgProfit: '0.00', bestTrade: '0.00', worstTrade: '0.00' },
                     charts: { main: null, pnl: null }
                 }
@@ -236,7 +236,7 @@
                         this.price = status.price;
                         this.change = status.change24h;
                         this.balance = status.balance;
-                        this.isRunning = status.is_running;
+                        this.isRunning = status.is_running; this.sandbox = status.sandbox;
                         this.positions = status.positions;
                         this.history = status.history;
 
